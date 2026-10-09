@@ -19,7 +19,7 @@ def use_colab():
         return True
     if p == "gemini":
         return False
-    return bool(settings.colab_url) and colab_client.alive()   # auto
+    return bool(settings.colab_url) and colab_client.alive()
 
 
 def engine():
@@ -50,7 +50,7 @@ def _strategy_fields(s):
     }
 
 
-# ---------- Gemini pipeline (routes -> services -> chains) ----------
+# ---------- Gemini pipeline ----------
 def generate_directions(ui):
     from app.ai import chains
     from app.rag.retriever import retrieve_knowledge
@@ -58,6 +58,7 @@ def generate_directions(ui):
     base = _base(ui)
     docs = retrieve_knowledge(ui)
     product = chains.product_chain().invoke(base)
+
     und = {
         "features": product.features,
         "benefits": product.benefits,
@@ -65,13 +66,17 @@ def generate_directions(ui):
         "customer_desires": product.customer_desires,
         "product_positioning": product.product_positioning,
     }
+
     context = "\n\n".join(d.page_content for d in docs)
+
     strategy = chains.strategy_chain().invoke(
         {**base, **und, "marketing_knowledge": context}
     )
+
     directions = chains.directions_chain().invoke(
         {**base, **und, **_strategy_fields(strategy)}
     )
+
     return {
         "product_understanding": product.model_dump(),
         "campaign_strategy": strategy.model_dump(),
@@ -108,7 +113,7 @@ def generate_content(ui, strategy, direction):
 
     best, best_v = None, None
 
-    for _ in range(2):  # one regeneration if a rule is broken
+    for _ in range(2):
         platform = chains.platform_chain().invoke(inputs)
         v = find_violations(platform.model_dump(), allowed)
 
@@ -140,7 +145,7 @@ def directions(payload):
     if use_colab():
         try:
             return colab_client.directions(payload)
-        except Exception as e:  # notebook went offline mid-request
+        except Exception as e:
             log.warning("Colab engine failed (%s)", e)
             if not gemini_ready():
                 raise
@@ -156,6 +161,7 @@ def content(user_input, strategy, direction):
                     "user_input": user_input,
                     "campaign_strategy": strategy,
                     "direction": direction,
+                    "language": user_input.get("language") or "English",
                 }
             )
         except Exception as e:
@@ -168,4 +174,3 @@ def content(user_input, strategy, direction):
         schemas.CampaignStrategy(**strategy),
         schemas.CampaignDirection(**direction),
     )
-
