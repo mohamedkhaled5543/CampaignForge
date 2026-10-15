@@ -28,3 +28,44 @@ def test_api_routes(monkeypatch):
     body = {"product_name": "Bottle", "product_description": "d", "target_audience": "a", "campaign_goal": "Sales", "brand_tone": "Playful"}
     assert c.post("/directions", json=body).json()["echo"] == "Bottle"
     assert c.get("/").status_code == 200
+
+
+def test_text_only_image_fallback(monkeypatch):
+    import base64
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from app.services import colab_client
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-api-key")
+
+    def _fail_post(path, payload):
+        raise RuntimeError("Colab unavailable")
+
+    monkeypatch.setattr(colab_client, "_post", _fail_post)
+
+    raw_bytes = b"fake-rendered-image-bytes"
+    expected_b64 = base64.b64encode(raw_bytes).decode()
+
+    part = SimpleNamespace(inline_data=SimpleNamespace(data=raw_bytes, mime_type="image/png"))
+    candidate = SimpleNamespace(content=SimpleNamespace(parts=[part]))
+    fake_response = SimpleNamespace(candidates=[candidate])
+
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = fake_response
+
+    import google.genai
+    monkeypatch.setattr(google.genai, "Client", lambda api_key: fake_client)
+
+    payload = {
+        "product_name": "Test Bottle",
+        "product_description": "A reusable bottle",
+        "visual_concept": "Studio shot of bottle on wooden table",
+        "product_photo": None,
+    }
+
+    result = colab_client.image(payload)
+
+    assert result["mode"] == "gemini_fallback"
+    assert result["engine"] == "gemini"
+    assert result["image"] == f"data:image/png;base64,{expected_b64}"
+

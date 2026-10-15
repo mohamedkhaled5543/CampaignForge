@@ -1,3 +1,4 @@
+import base64
 import os
 import requests
 
@@ -65,8 +66,6 @@ def image(payload):
 
         product_photo = payload.get("product_photo")
         if product_photo:
-            import base64
-
             header, encoded = product_photo.split(",", 1)
             image_bytes = base64.b64decode(encoded)
 
