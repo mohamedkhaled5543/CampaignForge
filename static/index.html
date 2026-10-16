@@ -148,7 +148,24 @@ function setStage(n){
 }
 async function post(path, body){
   const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json","ngrok-skip-browser-warning":"1"}, body:JSON.stringify(body)});
-  if(!r.ok) throw new Error("Server error " + r.status + ". Check the notebook logs.");
+  if(!r.ok){
+    let msg = "Server error " + r.status + ". Please try again.";
+    try {
+      const data = await r.json();
+      if(typeof data?.detail === "string" && data.detail.trim()){
+        msg = data.detail.trim();
+      } else if(Array.isArray(data?.detail) && data.detail.length){
+        const parts = data.detail.map(e => (typeof e === "string" ? e : e?.msg || "")).filter(Boolean);
+        if(parts.length) msg = parts.join("; ");
+      }
+    } catch(_){
+      // Non-JSON or malformed JSON responses fall back to the generic message
+    }
+    if(msg.includes("Traceback (most recent call last)") || /<html|<!doctype|<body/i.test(msg)){
+      msg = "Server error " + r.status + ". Please try again.";
+    }
+    throw new Error(msg);
+  }
   return r.json();
 }
 
@@ -315,11 +332,13 @@ document.addEventListener("click", async e => {
   const p = b.dataset.adimg, box = document.getElementById("adimg-" + p);
   b.disabled = true; b.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Creating photo...'; box.innerHTML = "";
   try {
-    const r = await fetch("/image", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({product_name:S.inputs.product_name, product_description:S.inputs.product_description,
-                            visual_concept:S.final[p].visual_concept, platform:p, product_photo:PHOTO})});
-    if(!r.ok){ const t = await r.text(); let m = t.slice(0,200); try{ const d = JSON.parse(t).detail; if(typeof d === "string") m = d; }catch(_){} throw new Error(m); }
-    const j = await r.json();
+    const j = await post("/image", {
+      product_name: S.inputs.product_name,
+      product_description: S.inputs.product_description,
+      visual_concept: S.final[p].visual_concept,
+      platform: p,
+      product_photo: PHOTO
+    });
     box.innerHTML = `<img src="${j.image}" alt="AI ad photo" class="rounded-xl w-full mt-3"><a download="${S.inputs.product_name}-${p}.png" href="${j.image}" data-html2canvas-ignore class="inline-block mt-2 text-sm font-semibold text-[#6d5df6]"><i class="fa-solid fa-download mr-1"></i>Download photo</a>`;
   } catch(err){ box.innerHTML = `<p class="text-sm text-red-500 mt-2">${esc(err.message)}</p>`; }
   b.disabled = false; b.innerHTML = '<i class="fa-solid fa-camera mr-2"></i>Regenerate ad photo';
